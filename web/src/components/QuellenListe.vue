@@ -73,6 +73,7 @@ function prozent(score: number): string {
 .quelle-score {
   color: var(--p-text-muted-color);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .quelle-absatz {
