@@ -1,55 +1,92 @@
-"""Austauschbarer LLM-Adapter für POST /frage.
+"""LLM-Adapter für POST /frage: OpenAI-kompatible Chat Completions mit Streaming.
 
-Der Dienst läuft ohne LLM (dann antwortet /frage mit 503). Wird LLM_BASE_URL
-und LLM_API_KEY gesetzt, spricht der Adapter jede OpenAI-kompatible
-Chat-Completions-API an (OpenAI, Mistral, Ollama lokal, ...).
+Standard ohne Variablen: Ollama lokal (http://localhost:11434/v1) mit Qwen3-4B-Instruct-2507.
+Über LLM_BASE_URL, LLM_API_KEY und LLM_MODEL läuft derselbe Adapter gegen Mistral, OpenAI
+oder jeden anderen OpenAI-kompatiblen Dienst. Die Instruct-2507-Variante von Qwen3 hat keinen
+Denkmodus; für Hybridmodelle (z. B. qwen3:4b) schaltet LLM_REASONING_EFFORT=none das Denken ab
+(Ollama bildet «none» auf think=false ab). Nicht setzen, wenn der Dienst das Feld nicht kennt.
 """
 
+import json
 import os
+from collections.abc import Iterator
 from typing import Protocol
 
 import httpx
 
+OLLAMA_LOKAL = "http://localhost:11434/v1"
+STANDARD_MODELL = "qwen3:4b-instruct-2507-q4_K_M"
+
 SYSTEM_PROMPT = (
-    "Du beantwortest Fragen ausschliesslich anhand des mitgelieferten Kontexts. "
-    "Steht die Antwort nicht im Kontext, sag das klar. Antworte knapp und auf Deutsch."
+    "Du bist ein Assistent, der Fragen zu Dokumenten beantwortet. "
+    "Du erhältst nummerierte Absätze aus den Dokumenten und eine Frage. "
+    "Antworte ausschliesslich mit Informationen aus diesen Absätzen; erfinde nichts und nutze kein Wissen "
+    "von ausserhalb. Steht die Antwort nicht in den Absätzen, schreib genau das: dass es nicht in den "
+    "Dokumenten steht. Antworte knapp, in ganzen Sätzen und in der Sprache der Frage."
 )
 
 
 class Antwortgeber(Protocol):
-    def antworte(self, frage: str, kontexte: list[str]) -> str: ...
+    modell: str
+    basis_url: str
+
+    def antworte_stream(self, frage: str, kontexte: list[str]) -> Iterator[str]: ...
 
 
 class OpenAiKompatiblerAntwortgeber:
-    def __init__(self, basis_url: str, api_key: str, modell: str, client: httpx.Client | None = None):
+    def __init__(
+        self,
+        basis_url: str,
+        api_key: str,
+        modell: str,
+        client: httpx.Client | None = None,
+        reasoning_effort: str | None = None,
+    ):
         self.basis_url = basis_url.rstrip("/")
         self.modell = modell
-        self._client = client or httpx.Client(timeout=60)
+        self.reasoning_effort = reasoning_effort
+        self._client = client or httpx.Client(timeout=httpx.Timeout(300, connect=10))
         self._headers = {"Authorization": f"Bearer {api_key}"}
 
-    def antworte(self, frage: str, kontexte: list[str]) -> str:
+    def antworte_stream(self, frage: str, kontexte: list[str]) -> Iterator[str]:
         kontext_block = "\n\n".join(f"[{i + 1}] {k}" for i, k in enumerate(kontexte))
-        nutzer = f"Kontext:\n{kontext_block}\n\nFrage: {frage}"
-        r = self._client.post(
-            f"{self.basis_url}/chat/completions",
-            headers=self._headers,
-            json={
-                "model": self.modell,
-                "messages": [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": nutzer},
-                ],
-                "temperature": 0,
-            },
-        )
-        r.raise_for_status()
-        return r.json()["choices"][0]["message"]["content"]
+        nutzer = f"Absätze aus den Dokumenten:\n\n{kontext_block}\n\nFrage: {frage}"
+        body: dict = {
+            "model": self.modell,
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": nutzer},
+            ],
+            "temperature": 0,
+            "stream": True,
+        }
+        if self.reasoning_effort:
+            body["reasoning_effort"] = self.reasoning_effort
+        with self._client.stream(
+            "POST", f"{self.basis_url}/chat/completions", headers=self._headers, json=body
+        ) as r:
+            if r.status_code >= 400:
+                r.read()
+                raise RuntimeError(f"LLM antwortet mit {r.status_code}: {r.text[:300]}")
+            for zeile in r.iter_lines():
+                if not zeile.startswith("data:"):
+                    continue
+                daten = zeile[5:].strip()
+                if daten == "[DONE]":
+                    break
+                for choice in json.loads(daten).get("choices", []):
+                    text = choice.get("delta", {}).get("content")
+                    if text:
+                        yield text
+
+    def antworte(self, frage: str, kontexte: list[str]) -> str:
+        return "".join(self.antworte_stream(frage, kontexte))
 
 
-def aus_umgebung() -> Antwortgeber | None:
-    basis_url = os.environ.get("LLM_BASE_URL")
-    api_key = os.environ.get("LLM_API_KEY")
-    if not basis_url or not api_key:
-        return None
-    modell = os.environ.get("LLM_MODELL", "gpt-4o-mini")
-    return OpenAiKompatiblerAntwortgeber(basis_url, api_key, modell)
+def aus_umgebung() -> OpenAiKompatiblerAntwortgeber:
+    basis_url = os.environ.get("LLM_BASE_URL") or OLLAMA_LOKAL
+    api_key = os.environ.get("LLM_API_KEY") or "ollama"  # Ollama verlangt einen Wert, ignoriert ihn aber
+    modell = os.environ.get("LLM_MODEL") or STANDARD_MODELL
+    return OpenAiKompatiblerAntwortgeber(
+        basis_url, api_key, modell, reasoning_effort=os.environ.get("LLM_REASONING_EFFORT") or None
+    )

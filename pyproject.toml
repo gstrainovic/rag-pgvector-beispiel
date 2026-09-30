@@ -13,11 +13,14 @@ dependencies = [
     "pgvector>=0.5",
     "fastembed>=0.8",
     "httpx>=0.28",
+    "pypdf>=6.19",
+    "python-multipart>=0.0.32",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=9",
+    "reportlab>=5.0",
     "testcontainers[postgres]>=4.15",
 ]
 

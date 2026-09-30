@@ -1,13 +1,7 @@
-import re
-from pathlib import Path
+import psycopg
+import pytest
 
 from app import db
-from app.embedding import DIMENSION
-
-
-def test_schema_dimension_stimmt_mit_modell_ueberein():
-    sql = Path("sql/001_schema.sql").read_text()
-    assert re.search(rf"vector\({DIMENSION}\)", sql)
 
 
 def test_migration_legt_extension_tabellen_und_hnsw_index_an(conn):
@@ -23,8 +17,25 @@ def test_migration_legt_extension_tabellen_und_hnsw_index_an(conn):
 
 
 def test_migration_ist_idempotent(datenbank_url):
-    db.migriere(datenbank_url)
-    db.migriere(datenbank_url)
+    db.migriere(datenbank_url, dimension=384)
+    db.migriere(datenbank_url, dimension=384)
+
+
+def test_migration_mit_anderer_dimension_bei_bestehender_tabelle_ist_fehler(datenbank_url):
+    with pytest.raises(db.DimensionKonflikt, match="384") as info:
+        db.migriere(datenbank_url, dimension=1024)
+    assert "1024" in str(info.value)
+    assert "EMBED" in str(info.value)
+
+
+def test_migration_legt_dimension_aus_parameter_an(datenbank_url):
+    # eigene Datenbank, damit die Session-Datenbank mit 384 unberührt bleibt
+    with psycopg.connect(datenbank_url, autocommit=True) as conn:
+        conn.execute("DROP DATABASE IF EXISTS dim_test")
+        conn.execute("CREATE DATABASE dim_test")
+    url = datenbank_url.rsplit("/", 1)[0] + "/dim_test"
+    db.migriere(url, dimension=1024)
+    assert db.gespeicherte_dimension(url) == 1024
 
 
 def test_speichern_und_suchen_mit_cosinus(conn, embedder):
@@ -56,3 +67,29 @@ def test_k_begrenzt_treffer(conn, embedder):
     db.speichere_dokument(conn, "Zehn", absaetze, embedder.embed(absaetze))
     (frage,) = embedder.embed_query(["Absatz"])
     assert len(db.suche(conn, frage, k=3)) == 3
+
+
+def test_liste_dokumente_mit_anzahl_und_zeit(conn, embedder):
+    a = ["Eins.", "Zwei."]
+    b = ["Drei."]
+    id_a = db.speichere_dokument(conn, "A", a, embedder.embed(a))
+    id_b = db.speichere_dokument(conn, "B", b, embedder.embed(b))
+    liste = db.liste_dokumente(conn)
+    assert [(d.id, d.titel, d.anzahl_absaetze) for d in liste] == [(id_a, "A", 2), (id_b, "B", 1)]
+    assert liste[0].erstellt is not None
+    assert db.anzahl_dokumente(conn) == 2
+
+
+def test_loesche_dokument_entfernt_auch_absaetze(conn, embedder):
+    a = ["Eins.", "Zwei."]
+    dok_id = db.speichere_dokument(conn, "A", a, embedder.embed(a))
+    assert db.loesche_dokument(conn, dok_id) is True
+    assert db.liste_dokumente(conn) == []
+    assert conn.execute("SELECT count(*) FROM absaetze").fetchone()[0] == 0
+    assert db.loesche_dokument(conn, dok_id) is False
+
+
+def test_titel_existiert(conn, embedder):
+    db.speichere_dokument(conn, "Hausordnung", ["x"], embedder.embed(["x"]))
+    assert db.titel_existiert(conn, "Hausordnung") is True
+    assert db.titel_existiert(conn, "Anderes") is False

@@ -1,4 +1,6 @@
 -- Schema für das RAG-Beispiel. Wird beim Start der App ausgeführt, idempotent.
+-- {dimension} wird von app/db.py durch die Vektordimension des Embedders ersetzt
+-- (qwen3-embedding:0.6b und mistral-embed: 1024, fastembed MiniLM: 384).
 
 CREATE EXTENSION IF NOT EXISTS vector;
 
@@ -8,13 +10,12 @@ CREATE TABLE IF NOT EXISTS dokumente (
     erstellt_am TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- 384 = Dimension von sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
 CREATE TABLE IF NOT EXISTS absaetze (
     id          BIGSERIAL PRIMARY KEY,
     dokument_id BIGINT NOT NULL REFERENCES dokumente(id) ON DELETE CASCADE,
     position    INTEGER NOT NULL,
     inhalt      TEXT NOT NULL,
-    embedding   vector(384) NOT NULL
+    embedding   vector({dimension}) NOT NULL
 );
 
 -- HNSW-Index für Cosinus-Distanz (Operator <=>). Approximate Nearest Neighbour,

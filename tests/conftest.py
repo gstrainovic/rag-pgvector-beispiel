@@ -11,7 +11,7 @@ PG_IMAGE = "pgvector/pgvector:0.8.6-pg18"
 def datenbank_url():
     with PostgresContainer(PG_IMAGE, driver=None) as pg:
         url = pg.get_connection_url()
-        db.migriere(url)
+        db.migriere(url, dimension=384)
         yield url
 
 
