@@ -1,0 +1,34 @@
+services:
+  db:
+    image: pgvector/pgvector:0.8.6-pg18
+    environment:
+      POSTGRES_USER: rag
+      POSTGRES_PASSWORD: rag
+      POSTGRES_DB: rag
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rag -d rag"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  app:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://rag:rag@db:5432/rag
+      # Optional für POST /frage, jede OpenAI-kompatible API:
+      # LLM_BASE_URL: https://api.mistral.ai/v1
+      # LLM_API_KEY: ...
+      # LLM_MODELL: mistral-small-latest
+    volumes:
+      - modelle:/modelle   # Embedding-Modell wird beim ersten Start geladen und hier gecacht
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  modelle:
