@@ -1,0 +1,8 @@
+# Embedding-Modell, das Ollama auf der CPU statt der GPU ausführt.
+# Grund: qwen3-embedding:0.6b reserviert auf der GPU rund 2 GB VRAM; zusammen mit dem
+# Chat-Modell (2.9 GB) passt das nicht in 4 GB, und Ollama würde bei jeder Frage die
+# Modelle tauschen (gemessen: 12 s pro Wechsel). Auf der CPU dauert ein Frage-Embedding
+# etwa 100 ms, und das Chat-Modell bleibt dauerhaft auf der GPU.
+# Anlegen: ollama create qwen3-embedding-cpu -f ollama/Modelfile.qwen3-embedding-cpu
+FROM qwen3-embedding:0.6b
+PARAMETER num_gpu 0

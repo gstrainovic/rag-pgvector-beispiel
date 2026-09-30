@@ -602,8 +602,8 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
-    { name = "fastembed" },
     { name = "httpx" },
+    { name = "numpy" },
     { name = "pgvector" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pypdf" },
@@ -611,8 +611,14 @@ dependencies = [
     { name = "uvicorn" },
 ]
 
+[package.optional-dependencies]
+fastembed = [
+    { name = "fastembed" },
+]
+
 [package.dev-dependencies]
 dev = [
+    { name = "fastembed" },
     { name = "pytest" },
     { name = "reportlab" },
     { name = "testcontainers" },
@@ -621,17 +627,20 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.142" },
-    { name = "fastembed", specifier = ">=0.8" },
+    { name = "fastembed", marker = "extra == 'fastembed'", specifier = ">=0.8" },
     { name = "httpx", specifier = ">=0.28" },
+    { name = "numpy", specifier = ">=2" },
     { name = "pgvector", specifier = ">=0.5" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3" },
     { name = "pypdf", specifier = ">=6.19" },
     { name = "python-multipart", specifier = ">=0.0.32" },
     { name = "uvicorn", specifier = ">=0.40" },
 ]
+provides-extras = ["fastembed"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "fastembed", specifier = ">=0.8" },
     { name = "pytest", specifier = ">=9" },
     { name = "reportlab", specifier = ">=5.0" },
     { name = "testcontainers", extras = ["postgres"], specifier = ">=4.15" },

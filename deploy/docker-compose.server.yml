@@ -1,0 +1,75 @@
+# Server-Betrieb ohne Ollama: Sprachmodell und Embeddings kommen von Mistral (oder einem
+# anderen OpenAI-kompatiblen Dienst), Caddy holt das TLS-Zertifikat von Let's Encrypt.
+# Start auf der VM (siehe README.md in diesem Ordner):
+#   docker compose -f deploy/docker-compose.server.yml up -d --build
+# Die Variablen kommen aus ../.env (LLM_BASE_URL, LLM_API_KEY, LLM_MODEL, EMBED_*).
+
+services:
+  db:
+    image: pgvector/pgvector:0.8.6-pg18
+    environment:
+      POSTGRES_USER: rag
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rag}
+      POSTGRES_DB: rag
+    # Kleine Instanz: 3.8 GB RAM auf der VM, davon soll die Demo unter 1 GB bleiben
+    command: >
+      postgres -c shared_buffers=64MB -c work_mem=4MB -c maintenance_work_mem=32MB
+               -c effective_cache_size=128MB -c max_connections=20
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rag -d rag"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql://rag:${POSTGRES_PASSWORD:-rag}@db:5432/rag
+      LLM_BASE_URL: ${LLM_BASE_URL:?LLM_BASE_URL fehlt in .env}
+      LLM_API_KEY: ${LLM_API_KEY:?LLM_API_KEY fehlt in .env}
+      LLM_MODEL: ${LLM_MODEL:-mistral-small-latest}
+      LLM_REASONING_EFFORT: ${LLM_REASONING_EFFORT:-}
+      EMBED_PROVIDER: ${EMBED_PROVIDER:-openai}
+      EMBED_MODEL: ${EMBED_MODEL:-mistral-embed}
+      EMBED_DIM: ${EMBED_DIM:-1024}
+      EMBED_BASE_URL: ${EMBED_BASE_URL:-}
+      EMBED_API_KEY: ${EMBED_API_KEY:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 384m
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+    deploy:
+      resources:
+        limits:
+          memory: 64m
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

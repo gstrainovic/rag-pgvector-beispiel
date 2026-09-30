@@ -1,3 +1,13 @@
+# Lokale Demo: alles ohne API-Schlüssel.
+#   docker compose up --build          -> http://localhost:8000
+# Erster Start lädt die Modelle (ca. 3.2 GB) in das Volume «ollama»; der Dienst ollama-init
+# meldet sich, wenn sie bereit sind. Danach startet die Demo in Sekunden.
+#
+# Cloud-Betrieb ohne Ollama (z. B. Mistral): Variablen aus .env.example in .env setzen und nur
+# die Dienste db und api starten:
+#   docker compose up --build db api
+# Für den Server siehe deploy/.
+
 services:
   db:
     image: pgvector/pgvector:0.8.6-pg18
@@ -13,22 +23,54 @@ services:
       timeout: 3s
       retries: 15
 
-  app:
+  ollama:
+    image: ollama/ollama:latest
+    environment:
+      # 2048 Token reichen für Systemprompt, 4–5 Absätze und die Antwort und halten das
+      # Chat-Modell auf der 4-GB-GPU bei 2.9 GB (mit 4096: 3.5 GB).
+      OLLAMA_CONTEXT_LENGTH: "2048"
+      OLLAMA_KEEP_ALIVE: "30m"
+    volumes:
+      - ollama:/root/.ollama
+    # GPU (NVIDIA, braucht das NVIDIA Container Toolkit). Ohne GPU diese vier Zeilen löschen,
+    # dann rechnet Ollama auf der CPU (Qwen3-4B: ca. 10 Token/s auf 12 Kernen statt 14 auf der P1000).
+    gpus:
+      - driver: nvidia
+        count: all
+        capabilities: [gpu]
+
+  ollama-init:
+    image: ollama/ollama:latest
+    depends_on:
+      - ollama
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      LLM_MODEL: ${LLM_MODEL:-qwen3:4b-instruct-2507-q4_K_M}
+    volumes:
+      - ./ollama:/init:ro
+    entrypoint: ["/bin/sh", "/init/init.sh"]
+    restart: "no"
+
+  api:
     build: .
     environment:
       DATABASE_URL: postgresql://rag:rag@db:5432/rag
-      # Optional für POST /frage, jede OpenAI-kompatible API:
-      # LLM_BASE_URL: https://api.mistral.ai/v1
-      # LLM_API_KEY: ...
-      # LLM_MODELL: mistral-small-latest
-    volumes:
-      - modelle:/modelle   # Embedding-Modell wird beim ersten Start geladen und hier gecacht
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://ollama:11434/v1}
+      LLM_API_KEY: ${LLM_API_KEY:-ollama}
+      LLM_MODEL: ${LLM_MODEL:-qwen3:4b-instruct-2507-q4_K_M}
+      LLM_REASONING_EFFORT: ${LLM_REASONING_EFFORT:-}
+      EMBED_PROVIDER: ${EMBED_PROVIDER:-ollama}
+      EMBED_MODEL: ${EMBED_MODEL:-qwen3-embedding-cpu}
+      EMBED_DIM: ${EMBED_DIM:-1024}
+      EMBED_BASE_URL: ${EMBED_BASE_URL:-}
+      EMBED_API_KEY: ${EMBED_API_KEY:-}
     ports:
       - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   pgdata:
-  modelle:
+  ollama:

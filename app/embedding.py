@@ -64,12 +64,22 @@ class OpenAiKompatiblerEmbedder:
         return self.embed(texte)
 
     def _anfrage(self, texte: list[str]) -> list[np.ndarray]:
-        r = self._client.post(
-            f"{self.basis_url}/embeddings",
-            headers={"Authorization": f"Bearer {self.api_key}"},
-            json={"model": self.modell, "input": texte},
-        )
-        r.raise_for_status()
+        try:
+            r = self._client.post(
+                f"{self.basis_url}/embeddings",
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                json={"model": self.modell, "input": texte},
+            )
+        except httpx.TransportError as e:
+            raise RuntimeError(f"Embedding-Dienst {self.basis_url} nicht erreichbar: {e}") from e
+        if r.status_code == 404:
+            raise RuntimeError(
+                f"Embedding-Modell «{self.modell}» fehlt beim Dienst {self.basis_url} ({r.text[:200]}). "
+                f"Bei Ollama: ollama pull qwen3-embedding:0.6b und "
+                f"ollama create qwen3-embedding-cpu -f ollama/Modelfile.qwen3-embedding-cpu"
+            )
+        if r.status_code >= 400:
+            raise RuntimeError(f"Embedding-Dienst antwortet mit {r.status_code}: {r.text[:300]}")
         daten = sorted(r.json()["data"], key=lambda d: d.get("index", 0))
         return [_normiere(np.asarray(d["embedding"], dtype=np.float32)) for d in daten]
 

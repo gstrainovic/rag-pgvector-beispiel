@@ -1,0 +1,9 @@
+# TLS automatisch über Let's Encrypt; DNS-A-Record rag.strainovic-it.ch muss auf die VM zeigen,
+# Ports 80 und 443 müssen von aussen erreichbar sein.
+rag.strainovic-it.ch {
+	encode zstd gzip
+	# Server-Sent Events (POST /api/frage) dürfen nicht gepuffert werden
+	reverse_proxy api:8000 {
+		flush_interval -1
+	}
+}

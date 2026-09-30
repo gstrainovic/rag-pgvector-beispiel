@@ -4,3 +4,8 @@ __pycache__/
 .pytest_cache/
 tests/
 modelle/
+web/node_modules/
+web/dist/
+docs/
+deploy/
+.env

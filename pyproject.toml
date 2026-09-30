@@ -11,14 +11,18 @@ dependencies = [
     "uvicorn>=0.40",
     "psycopg[binary]>=3.3",
     "pgvector>=0.5",
-    "fastembed>=0.8",
     "httpx>=0.28",
     "pypdf>=6.19",
     "python-multipart>=0.0.32",
+    "numpy>=2",
 ]
+
+[project.optional-dependencies]
+fastembed = ["fastembed>=0.8"]
 
 [dependency-groups]
 dev = [
+    "fastembed>=0.8",
     "pytest>=9",
     "reportlab>=5.0",
     "testcontainers[postgres]>=4.15",
