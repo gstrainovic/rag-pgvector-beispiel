@@ -44,8 +44,8 @@ gebauter Oberfläche, 384 MB), `caddy` (64 MB). Alle mit `restart: unless-stoppe
 
    ```sh
    cd /opt/rag-demo
-   docker compose -f deploy/docker-compose.server.yml up -d --build
-   docker compose -f deploy/docker-compose.server.yml logs -f api
+   docker compose --env-file .env -f deploy/docker-compose.server.yml up -d --build
+   docker compose --env-file .env -f deploy/docker-compose.server.yml logs -f api
    ```
 
    Die API meldet beim Start `LLM mistral-small-latest @ https://api.mistral.ai/v1,
@@ -61,11 +61,11 @@ gebauter Oberfläche, 384 MB), `caddy` (64 MB). Alle mit `restart: unless-stoppe
 
 ```sh
 rsync ... (wie oben)
-ssh debian@<VM-IP> 'cd /opt/rag-demo && docker compose -f deploy/docker-compose.server.yml up -d --build'
+ssh debian@<VM-IP> 'cd /opt/rag-demo && docker compose --env-file .env -f deploy/docker-compose.server.yml up -d --build'
 ```
 
 Die Datenbank bleibt im Volume `pgdata`. Wer den Embedder wechselt (andere Dimension),
-muss die Daten löschen: `docker compose -f deploy/docker-compose.server.yml down -v`.
+muss die Daten löschen: `docker compose --env-file .env -f deploy/docker-compose.server.yml down -v`.
 
 ## Hinweise
 

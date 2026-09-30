@@ -5,6 +5,9 @@ jede Antwort nennt die Absätze, auf die sie sich stützt. Läuft komplett lokal
 API-Schlüssel (Ollama) und lässt sich per Umgebungsvariable auf Mistral, OpenAI oder
 jeden anderen OpenAI-kompatiblen Dienst umschalten.
 
+**Live ausprobieren:** https://rag.strainovic-it.ch (läuft auf einer kleinen VM mit
+Mistral als Modell; «Beispieldokumente laden» klicken, dann fragen).
+
 ![Bildschirmfoto der Demo](docs/demo.png)
 
 Stack: Vue 3 + PrimeVue (TypeScript, Vite), FastAPI (Python), PostgreSQL mit pgvector,

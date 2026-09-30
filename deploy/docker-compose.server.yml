@@ -1,7 +1,7 @@
 # Server-Betrieb ohne Ollama: Sprachmodell und Embeddings kommen von Mistral (oder einem
 # anderen OpenAI-kompatiblen Dienst), Caddy holt das TLS-Zertifikat von Let's Encrypt.
 # Start auf der VM (siehe README.md in diesem Ordner):
-#   docker compose -f deploy/docker-compose.server.yml up -d --build
+#   docker compose --env-file .env -f deploy/docker-compose.server.yml up -d --build
 # Die Variablen kommen aus ../.env (LLM_BASE_URL, LLM_API_KEY, LLM_MODEL, EMBED_*).
 
 services:
