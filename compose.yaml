@@ -1,11 +1,14 @@
 # Lokale Demo: alles ohne API-Schlüssel.
-#   docker compose up --build          -> http://localhost:8000
+#   docker compose up --build          -> http://localhost:3000
 # Erster Start lädt die Modelle (ca. 3.2 GB) in das Volume «ollama»; der Dienst ollama-init
-# meldet sich, wenn sie bereit sind. Danach startet die Demo in Sekunden.
+# meldet sich, wenn sie bereit sind. Die API lädt danach die Beispieldokumente von selbst.
+#
+# Aufbau: web (Next.js, Port 3000) -> api (FastAPI, Port 8000) -> db (PostgreSQL mit pgvector).
+# Der Browser spricht nur mit web; /api/* reicht Next an die API weiter.
 #
 # Cloud-Betrieb ohne Ollama (z. B. Mistral): Variablen aus .env.example in .env setzen und nur
-# die Dienste db und api starten:
-#   docker compose up --build db api
+# die Dienste db, api und web starten:
+#   docker compose up --build db api web
 # Für den Server siehe deploy/.
 
 services:
@@ -59,16 +62,33 @@ services:
       LLM_API_KEY: ${LLM_API_KEY:-ollama}
       LLM_MODEL: ${LLM_MODEL:-qwen3:4b-instruct-2507-q4_K_M}
       LLM_REASONING_EFFORT: ${LLM_REASONING_EFFORT:-}
+      LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-}
       EMBED_PROVIDER: ${EMBED_PROVIDER:-ollama}
       EMBED_MODEL: ${EMBED_MODEL:-qwen3-embedding-cpu}
       EMBED_DIM: ${EMBED_DIM:-1024}
       EMBED_BASE_URL: ${EMBED_BASE_URL:-}
       EMBED_API_KEY: ${EMBED_API_KEY:-}
+      # Grenzen der Demo, leer = Standardwert aus app/grenzen.py
+      LIMIT_FRAGEN_PRO_TAG: ${LIMIT_FRAGEN_PRO_TAG:-}
+      LIMIT_FRAGEN_PRO_MINUTE_IP: ${LIMIT_FRAGEN_PRO_MINUTE_IP:-}
+      LIMIT_DOKUMENTE_PRO_SITZUNG: ${LIMIT_DOKUMENTE_PRO_SITZUNG:-}
+      LIMIT_ABSAETZE_PRO_DOKUMENT: ${LIMIT_ABSAETZE_PRO_DOKUMENT:-}
+      LIMIT_UPLOADS_PRO_TAG: ${LIMIT_UPLOADS_PRO_TAG:-}
     ports:
-      - "8000:8000"
+      - "8000:8000" # nur für die API-Doku unter /docs; die Oberfläche braucht den Port nicht
     depends_on:
       db:
         condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build: ./web
+    environment:
+      API_URL: http://api:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
     restart: unless-stopped
 
 volumes:

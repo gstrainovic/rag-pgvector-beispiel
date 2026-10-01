@@ -1,9 +1,17 @@
 # TLS automatisch über Let's Encrypt; DNS-A-Record rag.strainovic-it.ch muss auf die VM zeigen,
 # Ports 80 und 443 müssen von aussen erreichbar sein.
+#
+# Keine log-Direktive: Caddy führt kein Zugriffsprotokoll (siehe Datenschutzerklärung der Demo).
+# X-Forwarded-For setzt Caddy selbst auf die Adresse des Besuchers und verwirft, was der Browser
+# mitschickt; daran hängt die Grenze «Fragen pro Minute und IP» der API.
 rag.strainovic-it.ch {
 	encode zstd gzip
+	# Die API nimmt Dateien bis 20 MB; Grösseres weist schon Caddy ab, bevor es Speicher belegt
+	request_body {
+		max_size 25MB
+	}
 	# Server-Sent Events (POST /api/frage) dürfen nicht gepuffert werden
-	reverse_proxy api:8000 {
+	reverse_proxy web:3000 {
 		flush_interval -1
 	}
 }

@@ -2,7 +2,18 @@
 # anderen OpenAI-kompatiblen Dienst), Caddy holt das TLS-Zertifikat von Let's Encrypt.
 # Start auf der VM (siehe README.md in diesem Ordner):
 #   docker compose --env-file .env -f deploy/docker-compose.server.yml up -d --build
-# Die Variablen kommen aus ../.env (LLM_BASE_URL, LLM_API_KEY, LLM_MODEL, EMBED_*).
+# Die Variablen kommen aus ../.env (LLM_BASE_URL, LLM_API_KEY, LLM_MODEL, EMBED_*, LIMIT_*).
+#
+# Weg einer Anfrage: Browser -> caddy (TLS) -> web (Next.js) -> api (FastAPI) -> db.
+# Von aussen erreichbar ist nur caddy.
+
+# Container-Logs klein halten: es gibt kein Zugriffsprotokoll, und Fehlermeldungen werden nach
+# 3 x 5 MB überschrieben (so steht es in der Datenschutzerklärung).
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 5m
+    max-file: "3"
 
 services:
   db:
@@ -26,6 +37,7 @@ services:
       resources:
         limits:
           memory: 256m
+    logging: *logging
     restart: unless-stopped
 
   api:
@@ -38,11 +50,18 @@ services:
       LLM_API_KEY: ${LLM_API_KEY:?LLM_API_KEY fehlt in .env}
       LLM_MODEL: ${LLM_MODEL:-mistral-small-latest}
       LLM_REASONING_EFFORT: ${LLM_REASONING_EFFORT:-}
+      LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-}
       EMBED_PROVIDER: ${EMBED_PROVIDER:-openai}
       EMBED_MODEL: ${EMBED_MODEL:-mistral-embed}
       EMBED_DIM: ${EMBED_DIM:-1024}
       EMBED_BASE_URL: ${EMBED_BASE_URL:-}
       EMBED_API_KEY: ${EMBED_API_KEY:-}
+      # Grenzen der öffentlichen Demo, leer = Standardwert aus app/grenzen.py
+      LIMIT_FRAGEN_PRO_TAG: ${LIMIT_FRAGEN_PRO_TAG:-}
+      LIMIT_FRAGEN_PRO_MINUTE_IP: ${LIMIT_FRAGEN_PRO_MINUTE_IP:-}
+      LIMIT_DOKUMENTE_PRO_SITZUNG: ${LIMIT_DOKUMENTE_PRO_SITZUNG:-}
+      LIMIT_ABSAETZE_PRO_DOKUMENT: ${LIMIT_ABSAETZE_PRO_DOKUMENT:-}
+      LIMIT_UPLOADS_PRO_TAG: ${LIMIT_UPLOADS_PRO_TAG:-}
     depends_on:
       db:
         condition: service_healthy
@@ -50,6 +69,23 @@ services:
       resources:
         limits:
           memory: 384m
+    logging: *logging
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ../web
+      dockerfile: Dockerfile
+    environment:
+      # interne Adresse der API für Server Components, Server-Aktion und den Route Handler /api/*
+      API_URL: http://api:8000
+    depends_on:
+      - api
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+    logging: *logging
     restart: unless-stopped
 
   caddy:
@@ -62,11 +98,12 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - api
+      - web
     deploy:
       resources:
         limits:
           memory: 64m
+    logging: *logging
     restart: unless-stopped
 
 volumes:

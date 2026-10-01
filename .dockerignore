@@ -3,9 +3,9 @@
 __pycache__/
 .pytest_cache/
 tests/
+scripts/
 modelle/
-web/node_modules/
-web/dist/
+web/
 docs/
 deploy/
 .env
