@@ -24,7 +24,8 @@ def _teile_langen_absatz(absatz: str, max_zeichen: int) -> list[str]:
         return [absatz]
     teile: list[str] = []
     aktuell = ""
-    for satz in _SATZENDE.split(absatz):
+    saetze = [stueck for satz in _SATZENDE.split(absatz) for stueck in _teile_hart(satz, max_zeichen)]
+    for satz in saetze:
         kandidat = f"{aktuell} {satz}".strip()
         if aktuell and len(kandidat) > max_zeichen:
             teile.append(aktuell)
@@ -34,3 +35,18 @@ def _teile_langen_absatz(absatz: str, max_zeichen: int) -> list[str]:
     if aktuell:
         teile.append(aktuell)
     return teile
+
+
+def _teile_hart(satz: str, max_zeichen: int) -> list[str]:
+    """Ein «Satz» ohne Satzende (Tabelle, Liste, Kauderwelsch) wird an der letzten Wortgrenze vor der Obergrenze
+    geteilt, notfalls mitten im Wort. So ist die Obergrenze eine Garantie und keine Hoffnung."""
+    stuecke: list[str] = []
+    while len(satz) > max_zeichen:
+        schnitt = satz.rfind(" ", 0, max_zeichen + 1)
+        if schnitt <= 0:
+            schnitt = max_zeichen
+        stuecke.append(satz[:schnitt].rstrip())
+        satz = satz[schnitt:].lstrip()
+    if satz:
+        stuecke.append(satz)
+    return stuecke

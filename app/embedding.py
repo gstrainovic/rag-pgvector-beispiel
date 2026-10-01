@@ -13,6 +13,8 @@ from typing import Protocol
 import httpx
 import numpy as np
 
+from app.anbieter import KONTINGENT_STATUS, AnbieterKontingent
+
 OLLAMA_LOKAL = "http://localhost:11434/v1"
 OLLAMA_EMBED_MODELL = "qwen3-embedding:0.6b"
 FASTEMBED_MODELL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
@@ -78,6 +80,8 @@ class OpenAiKompatiblerEmbedder:
                 f"Bei Ollama: ollama pull qwen3-embedding:0.6b und "
                 f"ollama create qwen3-embedding-cpu -f ollama/Modelfile.qwen3-embedding-cpu"
             )
+        if r.status_code in KONTINGENT_STATUS:
+            raise AnbieterKontingent(f"Embedding-Dienst antwortet mit {r.status_code}: {r.text[:300]}")
         if r.status_code >= 400:
             raise RuntimeError(f"Embedding-Dienst antwortet mit {r.status_code}: {r.text[:300]}")
         daten = sorted(r.json()["data"], key=lambda d: d.get("index", 0))

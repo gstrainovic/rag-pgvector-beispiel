@@ -18,7 +18,7 @@ def datenbank_url():
 @pytest.fixture
 def conn(datenbank_url):
     with db.verbinde(datenbank_url) as conn:
-        conn.execute("TRUNCATE dokumente CASCADE")
+        conn.execute("TRUNCATE dokumente, tageszaehler CASCADE")
         conn.commit()
         yield conn
 

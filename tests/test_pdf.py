@@ -27,6 +27,29 @@ def test_text_aus_pdf_liefert_seiten_als_absaetze():
     assert "\n\n" in text
 
 
+def erzeuge_fliesstext_pdf(absaetze: list[str], zeilenabstand: float) -> bytes:
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import Paragraph, SimpleDocTemplate
+
+    stil = ParagraphStyle("a", fontName="Helvetica", fontSize=11, leading=zeilenabstand, spaceAfter=zeilenabstand)
+    puffer = BytesIO()
+    SimpleDocTemplate(puffer, pagesize=A4).build([Paragraph(a, stil) for a in absaetze])
+    return puffer.getvalue()
+
+
+def test_text_aus_pdf_erkennt_absaetze_innerhalb_einer_seite():
+    pdf = erzeuge_fliesstext_pdf(["Erster Absatz. " * 20, "Zweiter Absatz. " * 20], zeilenabstand=15)
+    bloecke = text_aus_pdf(pdf).split("\n\n")
+    assert len(bloecke) == 2
+    assert bloecke[1].startswith("Zweiter Absatz.")
+
+
+def test_text_aus_pdf_zerlegt_weiten_zeilenabstand_nicht_in_einzelzeilen():
+    # Bei doppeltem Zeilenabstand sähe jede Zeile wie ein Absatz aus; dann bleibt die Seite ein Block
+    pdf = erzeuge_fliesstext_pdf(["Erster Absatz. " * 20, "Zweiter Absatz. " * 20], zeilenabstand=22)
+    assert "\n\n" not in text_aus_pdf(pdf)
+
+
 def test_text_aus_datei_nach_endung():
     assert text_aus_datei("notiz.txt", b"Hallo Welt") == "Hallo Welt"
     assert text_aus_datei("notiz.MD", "# Titel\n\nAbsatz".encode()) == "# Titel\n\nAbsatz"

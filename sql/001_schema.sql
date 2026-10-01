@@ -10,6 +10,11 @@ CREATE TABLE IF NOT EXISTS dokumente (
     erstellt_am TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Anonyme Sitzung des Besuchers, der das Dokument hochgeladen hat (Cookie). NULL = Beispieldokument,
+-- für alle sichtbar und nicht löschbar.
+ALTER TABLE dokumente ADD COLUMN IF NOT EXISTS sitzung TEXT;
+CREATE INDEX IF NOT EXISTS dokumente_sitzung ON dokumente (sitzung);
+
 CREATE TABLE IF NOT EXISTS absaetze (
     id          BIGSERIAL PRIMARY KEY,
     dokument_id BIGINT NOT NULL REFERENCES dokumente(id) ON DELETE CASCADE,
@@ -22,3 +27,11 @@ CREATE TABLE IF NOT EXISTS absaetze (
 -- Standardparameter m=16, ef_construction=64.
 CREATE INDEX IF NOT EXISTS absaetze_embedding_hnsw
     ON absaetze USING hnsw (embedding vector_cosine_ops);
+
+-- Zähler je Tag (UTC) für die Grenzen der öffentlichen Demo: «fragen», «uploads».
+CREATE TABLE IF NOT EXISTS tageszaehler (
+    tag  DATE NOT NULL,
+    name TEXT NOT NULL,
+    wert INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (tag, name)
+);

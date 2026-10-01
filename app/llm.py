@@ -14,8 +14,11 @@ from typing import Protocol
 
 import httpx
 
+from app.anbieter import KONTINGENT_STATUS, AnbieterKontingent
+
 OLLAMA_LOKAL = "http://localhost:11434/v1"
 STANDARD_MODELL = "qwen3:4b-instruct-2507-q4_K_M"
+STANDARD_MAX_TOKENS = 500  # LLM_MAX_TOKENS: deckelt die Antwortlänge und damit die Kosten je Frage
 
 SYSTEM_PROMPT = (
     "Du bist ein Assistent, der Fragen zu Dokumenten beantwortet. "
@@ -41,10 +44,12 @@ class OpenAiKompatiblerAntwortgeber:
         modell: str,
         client: httpx.Client | None = None,
         reasoning_effort: str | None = None,
+        max_tokens: int = STANDARD_MAX_TOKENS,
     ):
         self.basis_url = basis_url.rstrip("/")
         self.modell = modell
         self.reasoning_effort = reasoning_effort
+        self.max_tokens = max_tokens
         self._client = client or httpx.Client(timeout=httpx.Timeout(300, connect=10))
         self._headers = {"Authorization": f"Bearer {api_key}"}
 
@@ -58,6 +63,7 @@ class OpenAiKompatiblerAntwortgeber:
                 {"role": "user", "content": nutzer},
             ],
             "temperature": 0,
+            "max_tokens": self.max_tokens,
             "stream": True,
         }
         if self.reasoning_effort:
@@ -67,6 +73,8 @@ class OpenAiKompatiblerAntwortgeber:
         ) as r:
             if r.status_code >= 400:
                 r.read()
+                if r.status_code in KONTINGENT_STATUS:
+                    raise AnbieterKontingent(f"LLM antwortet mit {r.status_code}: {r.text[:300]}")
                 raise RuntimeError(f"LLM antwortet mit {r.status_code}: {r.text[:300]}")
             for zeile in r.iter_lines():
                 if not zeile.startswith("data:"):
@@ -88,5 +96,9 @@ def aus_umgebung() -> OpenAiKompatiblerAntwortgeber:
     api_key = os.environ.get("LLM_API_KEY") or "ollama"  # Ollama verlangt einen Wert, ignoriert ihn aber
     modell = os.environ.get("LLM_MODEL") or STANDARD_MODELL
     return OpenAiKompatiblerAntwortgeber(
-        basis_url, api_key, modell, reasoning_effort=os.environ.get("LLM_REASONING_EFFORT") or None
+        basis_url,
+        api_key,
+        modell,
+        reasoning_effort=os.environ.get("LLM_REASONING_EFFORT") or None,
+        max_tokens=int(os.environ.get("LLM_MAX_TOKENS") or STANDARD_MAX_TOKENS),
     )

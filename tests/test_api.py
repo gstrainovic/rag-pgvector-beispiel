@@ -31,7 +31,8 @@ def attrappe():
 
 @pytest.fixture
 def client(datenbank_url, embedder, attrappe, conn):
-    app = erstelle_app(datenbank_url, embedder=embedder, antwortgeber=attrappe)
+    # ohne die Beispieldokumente; die prüft tests/test_demo_betrieb.py
+    app = erstelle_app(datenbank_url, embedder=embedder, antwortgeber=attrappe, beispiele_laden=False)
     with TestClient(app) as c:
         yield c
 
@@ -203,7 +204,7 @@ def test_frage_ohne_dokumente_fragt_kein_llm(client, attrappe):
 
 def test_frage_meldet_llm_fehler_als_event(datenbank_url, embedder, conn):
     attrappe = AntwortgeberAttrappe(fehler=ConnectionError("Ollama nicht erreichbar"))
-    app = erstelle_app(datenbank_url, embedder=embedder, antwortgeber=attrappe)
+    app = erstelle_app(datenbank_url, embedder=embedder, antwortgeber=attrappe, beispiele_laden=False)
     with TestClient(app) as c:
         c.post("/api/dokumente", json={"titel": "A", "text": "Eins."})
         r = c.post("/api/frage", json={"frage": "Was?"})
@@ -224,36 +225,82 @@ def test_info(client):
     assert info["llm_basis_url"] == "http://attrappe/v1"
     assert info["embedder"].startswith("fastembed:")
     assert info["anzahl_dokumente"] == 1
+    assert (info["fragen_heute"], info["limit_fragen_pro_tag"], info["uploads_heute"]) == (0, 300, 1)
 
 
-def test_beispiele_laden_ist_idempotent(client):
-    r = client.post("/api/beispiele")
-    assert r.status_code == 201
-    titel = [d["titel"] for d in r.json()]
-    assert len(titel) == 3
-    assert all(d["anzahl_absaetze"] >= 3 for d in r.json())
-    client.post("/api/beispiele")
-    assert len(client.get("/api/dokumente").json()) == 3
-    s = client.get("/api/suche", params={"q": "Wann ist Nachtruhe?", "k": 1}).json()
-    assert "Uhr" in s["treffer"][0]["absatz"]
+# --- Beispieldokumente herunterladen ---------------------------------------------------------
+
+BEISPIEL_TITEL = ["FAQ Schreinerei Holzwerk", "Hausordnung Sonnenhof", "Wartungsanleitung Heizung HZ-40"]
 
 
-# --- Frontend-Auslieferung -------------------------------------------------------------------
-
-
-def test_web_dist_wird_ausgeliefert_mit_spa_fallback(datenbank_url, embedder, attrappe, conn, tmp_path):
-    (tmp_path / "index.html").write_text("<!doctype html><title>Demo</title>")
-    (tmp_path / "assets").mkdir()
-    (tmp_path / "assets" / "a.js").write_text("console.log(1)")
-    app = erstelle_app(datenbank_url, embedder=embedder, antwortgeber=attrappe, web_dist=tmp_path)
-    with TestClient(app) as c:
-        assert "<title>Demo</title>" in c.get("/").text
-        assert c.get("/assets/a.js").text == "console.log(1)"
-        assert "<title>Demo</title>" in c.get("/irgendeine/route").text
-        assert c.get("/api/info").status_code == 200
-
-
-def test_ohne_web_dist_gibt_wurzel_hinweis(client):
-    r = client.get("/")
+def test_beispiele_liste_nennt_titel_dateiname_und_groesse(client):
+    r = client.get("/api/beispiele")
     assert r.status_code == 200
-    assert "/docs" in r.json()["hinweis"]
+    liste = r.json()
+    assert [(e["titel"], e["dateiname"]) for e in liste] == [
+        (t, f"{t}.{endung}") for t in BEISPIEL_TITEL for endung in ("md", "pdf")
+    ]
+    assert all(isinstance(e["groesse"], int) and e["groesse"] > 500 for e in liste)
+
+
+def test_beispiel_download_als_anhang(client):
+    r = client.get("/api/beispiele/Hausordnung Sonnenhof.pdf")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/pdf"
+    assert r.headers["content-disposition"].startswith("attachment;")
+    assert "Hausordnung" in r.headers["content-disposition"]
+    assert r.content.startswith(b"%PDF-")
+    groesse = next(e["groesse"] for e in client.get("/api/beispiele").json() if e["dateiname"].endswith("Sonnenhof.pdf"))
+    assert len(r.content) == groesse
+
+    md = client.get("/api/beispiele/Hausordnung Sonnenhof.md")
+    assert md.status_code == 200
+    assert md.headers["content-type"].startswith("text/markdown")
+    assert md.headers["content-disposition"].startswith("attachment;")
+    assert "Nachtruhe" in md.text
+
+
+@pytest.mark.parametrize(
+    "pfad",
+    [
+        "/api/beispiele/gibtsnicht.pdf",
+        "/api/beispiele/..",
+        "/api/beispiele/../main.py",
+        "/api/beispiele/..%2Fmain.py",
+        "/api/beispiele/%2E%2E%2Fmain.py",
+        "/api/beispiele/..%5Cmain.py",
+        "/api/beispiele/%2Fetc%2Fpasswd",
+        "/api/beispiele/.versteckt.md",
+    ],
+)
+def test_beispiel_download_ohne_pfad_traversal(client, pfad):
+    r = client.get(pfad)
+    assert r.status_code == 404
+    assert b"import" not in r.content and b"root:" not in r.content
+
+
+def test_beispiel_download_nur_md_und_pdf(client, monkeypatch, tmp_path):
+    (tmp_path / "geheim.txt").write_text("nicht ausliefern")
+    (tmp_path / "Notiz.md").write_text("# Notiz\n\nText.")
+    monkeypatch.setattr("app.main.BEISPIELE_ORDNER", tmp_path)
+    assert client.get("/api/beispiele/geheim.txt").status_code == 404
+    assert client.get("/api/beispiele/Notiz.md").status_code == 200
+    assert [e["dateiname"] for e in client.get("/api/beispiele").json()] == ["Notiz.md"]
+
+
+def test_beispiel_pdf_laesst_sich_hochladen_und_durchsuchen(client):
+    pdf = client.get("/api/beispiele/Hausordnung Sonnenhof.pdf").content
+    r = client.post("/api/dokumente/upload", files=[("dateien", ("Hausordnung Sonnenhof.pdf", pdf, "application/pdf"))])
+    assert r.status_code == 201
+    assert r.json()[0]["anzahl_absaetze"] >= 3
+    s = client.get("/api/suche", params={"q": "Wann ist Nachtruhe?", "k": 1}).json()
+    assert "22 Uhr" in s["treffer"][0]["absatz"]
+
+
+# --- Keine Oberfläche mehr in der API --------------------------------------------------------
+
+
+def test_api_liefert_keine_oberflaeche(client):
+    assert client.get("/").status_code == 404
+    assert client.get("/irgendeine/route").status_code == 404
+    assert client.get("/docs").status_code == 200

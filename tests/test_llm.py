@@ -50,6 +50,7 @@ def test_adapter_streamt_tokens_aus_sse(stream_adapter):
     assert body["model"] == "test-modell"
     assert body["stream"] is True
     assert "reasoning_effort" not in body
+    assert body["max_tokens"] == 500  # Antwortlänge gedeckelt: die Demo ist öffentlich
     nachrichten = body["messages"]
     assert nachrichten[0] == {"role": "system", "content": SYSTEM_PROMPT}
     assert nachrichten[-1]["role"] == "user"
@@ -101,3 +102,9 @@ def test_aus_umgebung_mit_cloud_dienst(monkeypatch):
     assert adapter.basis_url == "https://api.mistral.ai/v1"
     assert adapter.modell == "mistral-small-latest"
     assert adapter.reasoning_effort == "none"
+    assert adapter.max_tokens == 500
+
+
+def test_max_tokens_aus_der_umgebung(monkeypatch):
+    monkeypatch.setenv("LLM_MAX_TOKENS", "120")
+    assert aus_umgebung().max_tokens == 120

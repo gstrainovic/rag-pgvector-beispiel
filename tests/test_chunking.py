@@ -23,3 +23,12 @@ def test_lange_absaetze_werden_an_satzgrenzen_geteilt():
     assert all(len(t) <= 300 for t in teile)
     assert all(t.endswith(".") for t in teile)
     assert " ".join(teile) == text.strip()
+
+
+def test_text_ohne_satzende_wird_hart_geteilt_damit_kein_absatz_die_obergrenze_sprengt():
+    # z. B. eine Tabelle oder Datei ohne Punkte: die Obergrenze deckelt Tokens und damit Kosten je Absatz
+    woerter = "wort " * 500 + "x" * 700
+    teile = in_absaetze(woerter, max_zeichen=300)
+    assert all(len(t) <= 300 for t in teile)
+    assert "".join(teile).replace(" ", "") == woerter.replace(" ", "")
+    assert teile[0].endswith("wort")  # wenn möglich an einer Wortgrenze
