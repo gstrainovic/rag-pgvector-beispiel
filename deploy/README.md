@@ -8,7 +8,7 @@ Dienste in `docker-compose.server.yml`, alle mit `restart: unless-stopped`:
 
 | Dienst | Aufgabe | Speicherlimit |
 |---|---|---|
-| `caddy` | TLS, einziger Dienst mit offenen Ports (80, 443), leitet an `web:3000` | 64 MB |
+| `caddy` | TLS, einziger Dienst mit offenen Ports (80, 443), leitet an `web:3000` und an die Sites aus `CADDY_ZUSATZ` | 64 MB |
 | `web` | Next.js (Oberfläche, reicht `/api/*` an die API weiter) | 256 MB |
 | `api` | FastAPI, lädt beim Start die Beispieldokumente | 384 MB |
 | `db` | PostgreSQL mit pgvector | 256 MB |
@@ -53,7 +53,8 @@ Dienste in `docker-compose.server.yml`, alle mit `restart: unless-stopped`:
 
    Die Grenzen der Demo (`LIMIT_*`, `LLM_MAX_TOKENS`) haben Standardwerte und stehen nur in
    der `.env`, wenn sie abweichen sollen; siehe `.env.example` und das README im
-   Hauptordner.
+   Hauptordner. Laufen weitere Dienste über denselben Caddy, kommt `CADDY_ZUSATZ` dazu
+   (Abschnitt «Weitere Dienste hinter demselben Caddy»).
 
 3. Bauen und starten (zwei Images: API mit Python, Oberfläche mit Node):
 
@@ -90,6 +91,25 @@ ssh debian@<VM-IP> 'cd /opt/rag-demo \
 
 `restart caddy` ist nötig, weil die Caddyfile als einzelne Datei eingebunden ist: der
 laufende Container sieht eine ersetzte Datei erst nach dem Neustart.
+
+## Weitere Dienste hinter demselben Caddy
+
+Andere Dienste auf der VM können diesen Caddy mitbenutzen, ohne dass ein Deploy der Demo sie
+trennt:
+
+- Site-Block als `<dienst>.caddy` in ein Verzeichnis ausserhalb von `/opt/rag-demo` legen,
+  etwa `/opt/caddy-zusatz`, und in der `.env` `CADDY_ZUSATZ=/opt/caddy-zusatz` setzen. Die
+  Caddyfile holt die Dateien mit `import /etc/caddy/zusatz/*.caddy`; Schritt 1 löscht nur in
+  `/opt/rag-demo` und lässt die `.env` stehen. Ohne `CADDY_ZUSATZ` bindet Compose das leere
+  `deploy/zusatz` ein, Caddy meldet dann nur «No files matching import glob pattern».
+- Das Compose-Projekt des Dienstes hängt sich ans Netz `caddy-zusatz`, das dieses Compose
+  anlegt (`networks: caddy-zusatz: {external: true}` und den Dienst in dieses Netz); Caddy
+  erreicht ihn über den Dienstnamen. Darum zuerst die Demo starten, sonst bricht der Dienst mit
+  «network caddy-zusatz declared as external, but could not be found» ab.
+- Neue oder geänderte `.caddy`-Datei ohne Neustart übernehmen:
+  `docker exec deploy-caddy-1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile`.
+- `docker compose … down` der Demo lässt `caddy-zusatz` stehen, solange ein Dienst daran hängt
+  («Resource is still in use»); das folgende `up` nutzt das Netz weiter.
 
 Die Datenbank bleibt im Volume `deploy_pgdata`, die Zertifikate in `deploy_caddy_data`. Das
 Schema zieht die API beim Start selbst nach. Dokumente ohne Sitzung, die kein

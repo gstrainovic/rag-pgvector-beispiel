@@ -15,3 +15,8 @@ rag.strainovic-it.ch {
 		flush_interval -1
 	}
 }
+
+# Sites weiterer Dienste auf derselben VM, eine Datei je Dienst. Das Verzeichnis liegt ausserhalb
+# des Repos (CADDY_ZUSATZ in .env), damit ein Deploy es nicht überschreibt. Ist es leer, meldet
+# Caddy nur «No files matching import glob pattern» und startet trotzdem.
+import /etc/caddy/zusatz/*.caddy

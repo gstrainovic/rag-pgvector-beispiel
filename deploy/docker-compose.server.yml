@@ -95,8 +95,13 @@ services:
       - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Sites weiterer Dienste (*.caddy); ohne CADDY_ZUSATZ das leere deploy/zusatz
+      - ${CADDY_ZUSATZ:-./zusatz}:/etc/caddy/zusatz:ro
       - caddy_data:/data
       - caddy_config:/config
+    networks:
+      - default
+      - caddy-zusatz
     depends_on:
       - web
     deploy:
@@ -110,3 +115,9 @@ volumes:
   pgdata:
   caddy_data:
   caddy_config:
+
+networks:
+  # Nur Caddy und Dienste aus anderen Compose-Projekten, die Caddy erreichen soll; diese binden
+  # das Netz mit `external: true` und `name: caddy-zusatz` ein. Compose legt es an, falls es fehlt.
+  caddy-zusatz:
+    name: caddy-zusatz
