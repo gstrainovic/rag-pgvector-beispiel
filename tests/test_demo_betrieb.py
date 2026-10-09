@@ -1,5 +1,7 @@
 """Öffentliche Demo: Beispiele als Standard, Besucher getrennt per Sitzungs-Cookie, Grenzen gegen Kosten."""
 
+import gc
+import tracemalloc
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -325,3 +327,27 @@ def test_info_nennt_die_zaehler_fuer_den_tagescheck(baue):
     assert info["limit_fragen_pro_tag"] == 50
     assert info["uploads_heute"] == 2
     assert info["anzahl_dokumente"] == 2
+
+
+# --- Dauerbetrieb ------------------------------------------------------------------------------
+
+
+def test_speicher_waechst_nicht_mit_der_zahl_der_anfragen(baue):
+    """Die Demo läuft wochenlang mit 384 MB Grenze: jede Anfrage muss ihren Speicher wieder freigeben."""
+    client = baue()
+
+    def anfragen(n: int) -> None:
+        for _ in range(n):
+            besucher(client).get("/api/dokumente")  # neuer Besucher, eigene Datenbankverbindung
+
+    anfragen(20)  # Aufwärmen: einmalige Caches von FastAPI, psycopg und pgvector
+    gc.collect()
+    tracemalloc.start()
+    try:
+        vorher = tracemalloc.get_traced_memory()[0]
+        anfragen(300)
+        gc.collect()
+        zuwachs = tracemalloc.get_traced_memory()[0] - vorher
+    finally:
+        tracemalloc.stop()
+    assert zuwachs < 1_000_000, f"300 Anfragen haben {zuwachs / 1e6:.1f} MB zurückgelassen"

@@ -9,12 +9,17 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
+from threading import Lock
 
 import numpy as np
 import psycopg
 from pgvector.psycopg import register_vector
+from psycopg.adapt import AdaptersMap
 
 SCHEMA_DATEI = Path(__file__).resolve().parent.parent / "sql" / "001_schema.sql"
+
+_vector_vorlagen: dict[str, AdaptersMap] = {}
+_vector_sperre = Lock()  # Endpunkte laufen im Threadpool
 
 _SICHTBAR = "(d.sitzung IS NULL OR d.sitzung = %(sitzung)s)"
 
@@ -66,10 +71,25 @@ def migriere(url: str, dimension: int) -> None:
         conn.commit()
 
 
+def _vector_adapter(url: str) -> AdaptersMap:
+    """Adapter mit dem vector-Typ, einmal je Datenbank angelegt.
+
+    register_vector legt bei jedem Aufruf neue Dumper-Klassen an, und psycopg merkt sich jede davon für
+    immer (AdaptersMap._optimised). Je Verbindung aufgerufen, wuchs der Speicher mit jeder Anfrage.
+    """
+    with _vector_sperre:
+        vorlage = _vector_vorlagen.get(url)
+        if vorlage is None:
+            with psycopg.connect(url) as conn:
+                register_vector(conn)
+                vorlage = AdaptersMap(conn.adapters)
+            _vector_vorlagen[url] = vorlage
+        return vorlage
+
+
 def verbinde(url: str) -> psycopg.Connection:
     """Verbindung mit registriertem vector-Typ; setzt die Migration voraus."""
-    conn = psycopg.connect(url)
-    register_vector(conn)
+    conn = psycopg.connect(url, context=_vector_adapter(url))
     # Die Suche filtert nach Sitzung. Ohne iterativen Scan (pgvector ab 0.8) prüft der HNSW-Index nur
     # seine ersten ef_search Kandidaten; gehören die alle anderen Besuchern, käme nichts zurück.
     conn.execute("SET hnsw.iterative_scan = strict_order")
